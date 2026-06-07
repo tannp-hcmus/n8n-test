@@ -1,0 +1,51 @@
+{
+    "name": "Standup MCP Server",
+    "nodes": [
+      {
+        "parameters": {
+          "authentication": "none",
+          "path": "run-standup"
+        },
+        "id": "b1111111-1111-1111-1111-111111111111",
+        "name": "MCP Server Trigger",
+        "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+        "typeVersion": 2,
+        "position": [640, 400],
+        "webhookId": "standup-mcp-server",
+        "notes": "Exposes an MCP endpoint. Production URL is shown on the node (e.g. http://localhost:5678/mcp/run-standup). Activate the workflow, then `claude mcp add --transport http n8n-standup <that URL>`."
+      },
+      {
+        "parameters": {
+          "name": "run_standup_workflow",
+          "description": "Run today's standup: gather GitHub/Redmine/Slack activity, summarize with Claude, and post to Slack. Call this when the user says 'run my standup'.",
+          "workflowId": {
+            "__rl": true,
+            "value": "REPLACE_STANDUP_WORKFLOW_ID",
+            "mode": "id"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {}
+          }
+        },
+        "id": "b2222222-2222-2222-2222-222222222222",
+        "name": "run_standup_workflow",
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2.2,
+        "position": [900, 560],
+        "notes": "Set workflowId to your Standup workflow (mode 'From list' is easiest in the UI). That Standup workflow MUST have a 'When Executed by Another Workflow' (Execute Workflow Trigger) node."
+      }
+    ],
+    "connections": {
+      "run_standup_workflow": {
+        "ai_tool": [
+          [
+            { "node": "MCP Server Trigger", "type": "ai_tool", "index": 0 }
+          ]
+        ]
+      }
+    },
+    "settings": { "executionOrder": "v1" },
+    "pinData": {}
+  }
+  

@@ -1,0 +1,415 @@
+{
+    "nodes": [
+      {
+        "parameters": {},
+        "id": "039c6074-5579-4615-bb53-df5d05805273",
+        "name": "Manual Trigger",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          1664,
+          1600
+        ]
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 9
+              }
+            ]
+          }
+        },
+        "id": "e4abaa04-99c9-4a55-9e73-2d9791585339",
+        "name": "Schedule Trigger 9am",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          1664,
+          1760
+        ]
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "run-standup",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "id": "3f0e24ee-046c-4b73-8113-000adbd6d753",
+        "name": "Webhook (MCP entry)",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          1664,
+          1920
+        ],
+        "webhookId": "run-standup-webhook"
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "c0ffee00-0000-4000-8000-000000000001",
+        "name": "When Executed by Another Workflow",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          1664,
+          2080
+        ],
+        "notes": "Entry point for the MCP tool. The 'Standup MCP Server' workflow's Call n8n Workflow Tool (run_standup_workflow) calls this. Wired to the same 3 sources as the other triggers."
+      },
+      {
+        "parameters": {
+          "url": "=https://api.github.com/repos/tannp-hcmus/Portfolio-Claude/commits",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "since",
+                "value": "2026-05-06T12:43:48.058-04:00"
+              },
+              {
+                "name": "per_page",
+                "value": "50"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.github+json"
+              },
+              {
+                "name": "User-Agent",
+                "value": "n8n-standup-bot"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer abcd"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "8f50ab6e-d7f5-42f2-af99-7e8e5646b77d",
+        "name": "GitHub Commits",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2000,
+          1360
+        ],
+        "onError": "continueRegularOutput",
+        "notes": "GitHub node has no 'get commits' op in this version, so we use the REST API directly. Set owner/repo. Prefer a GitHub Header Auth / OAuth credential over the inline Bearer token. Empty result in 24h is OK."
+      },
+      {
+        "parameters": {
+          "url": "https://dev.zigexn.vn/issues.json",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBasicAuth",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "assigned_to_id",
+                "value": "me"
+              },
+              {
+                "name": "status_id",
+                "value": "open"
+              },
+              {
+                "name": "updated_on",
+                "value": ">=2026-05-07"
+              },
+              {
+                "name": "limit",
+                "value": "50"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Redmine-API-Key",
+                "value": "xyz"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "13fa7a6c-5b0b-4537-ab21-d7c328ff6b36",
+        "name": "Redmine Issues",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2000,
+          1520
+        ],
+        "credentials": {
+          "httpBasicAuth": {
+            "id": "TJENUkBpDNtN0EoB",
+            "name": "Redmine"
+          }
+        },
+        "onError": "continueRegularOutput",
+        "notes": "URL must end in .json (the plain /issues path returns the HTML page). Attach an HTTP Basic Auth credential (user abc / pass 1234) to pass the web gate. Replace REPLACE_REDMINE_API_KEY with your Redmine REST key for the X-Redmine-API-Key header (or move it to a Header Auth credential). Reset your API key after testing since it was exposed."
+      },
+      {
+        "parameters": {
+          "resource": "channel",
+          "operation": "history",
+          "channelId": {
+            "__rl": true,
+            "value": "new-channel",
+            "mode": "name"
+          },
+          "filters": {}
+        },
+        "id": "6831678c-c076-4d1f-b72f-695d220f466c",
+        "name": "Slack Read",
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.5,
+        "position": [
+          2000,
+          1680
+        ],
+        "webhookId": "fe5448e0-c3a2-4c46-bcde-dbd564d0a9c3",
+        "credentials": {
+          "slackApi": {
+            "id": "3pLMehhCN7Vzi09D",
+            "name": "Slack account"
+          }
+        },
+        "onError": "continueRegularOutput",
+        "notes": "Uses channel.history (conversations.history), which works with a BOT token (xoxb-) — unlike search which needs a user token. Needs channels:history (+ groups:history for private). Bot must be invited to the channel. If selecting by name fails, switch the channel field to 'By ID'."
+      },
+      {
+        "parameters": {
+          "jsCode": "// Pull each source by node name; tolerate missing/empty sources.\nfunction safe(nodeName) {\n  try { return $items(nodeName).map(i => i.json); } catch (e) { return []; }\n}\n\nconst github  = safe('GitHub Commits');\nconst redmineRaw = safe('Redmine Issues');\nconst redmine = (redmineRaw[0] && redmineRaw[0].issues) ? redmineRaw[0].issues : [];\nconst slack   = safe('Slack Read');\nconst gmail   = safe('Gmail');\n\n// Normalize to {source, title, url}\nconst rows = [];\nfor (const c of github)  rows.push({ source: 'GitHub',  title: ((c.commit && c.commit.message) || c.message || '').split('\\n')[0], url: c.html_url || '' });\nfor (const i of redmine) rows.push({ source: 'Redmine', title: `#${i.id} ${i.subject}`, url: '' });\nfor (const m of slack)   rows.push({ source: 'Slack',   title: (m.text || '').slice(0, 140), url: '' });\nfor (const g of gmail)   rows.push({ source: 'Gmail',   title: g.subject || g.snippet || '', url: '' });\n\n// Dedupe by source+title\nconst seen = new Set();\nconst deduped = rows.filter(r => {\n  const k = r.source + '|' + r.title;\n  if (!r.title || seen.has(k)) return false;\n  seen.add(k); return true;\n});\n\n// Build grouped activity string\nconst bySource = {};\nfor (const r of deduped) { (bySource[r.source] = bySource[r.source] || []).push(r); }\nlet activity = '';\nfor (const s of ['GitHub', 'Redmine', 'Slack', 'Gmail']) {\n  if (bySource[s] && bySource[s].length) {\n    activity += `${s}:\\n` + bySource[s].map(r => `- ${r.title}${r.url ? ' (' + r.url + ')' : ''}`).join('\\n') + '\\n\\n';\n  }\n}\nif (!activity) activity = 'No activity found in the last 24h.';\n\nreturn [{ json: { activity: activity.trim(), count: deduped.length } }];"
+        },
+        "id": "676be938-f5db-4ac6-b46b-af1d7350d591",
+        "name": "Merge & Format",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2352,
+          1600
+        ]
+      },
+      {
+        "parameters": {
+          "connectionMode": "docker",
+          "prompt": "=Based on this activity, write a standup with exactly three sections — Yesterday, Today, Blockers. Be concise, use bullet points. Activity:\n{{ $json.activity }}",
+          "toolPermissions": {},
+          "model": "sonnet",
+          "agents": {
+            "agentsList": []
+          },
+          "mcpServers": {
+            "serversList": []
+          },
+          "options": {
+            "workingDirectory": "/workspace",
+            "systemPromptMode": "replace",
+            "systemPrompt": "You are a standup assistant."
+          }
+        },
+        "id": "c9b7cc15-7020-4e79-804c-d92d334e707d",
+        "name": "Claude Code",
+        "type": "n8n-nodes-claude-code-cli.claudeCode",
+        "typeVersion": 1,
+        "position": [
+          2688,
+          1600
+        ],
+        "credentials": {
+          "claudeCodeDockerApi": {
+            "id": "kcA2otcb6mmMnG6Y",
+            "name": "Claude Code Local account"
+          }
+        },
+        "notes": "Needs Claude Code Docker credential (container claude-code-runner). After first run, switch operation to Resume Session with Session ID standup-tannp for memory across runs."
+      },
+      {
+        "parameters": {
+          "select": "channel",
+          "channelId": {
+            "__rl": true,
+            "value": "new-channel",
+            "mode": "name"
+          },
+          "text": "={{ $json.result || $json.text || $json.output }}",
+          "otherOptions": {}
+        },
+        "id": "2a6420b9-daf7-4db8-b830-f11c080cd21a",
+        "name": "Slack Post",
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.5,
+        "position": [
+          3024,
+          1600
+        ],
+        "webhookId": "0052ccef-7e59-4d17-949f-49d78f0146dd",
+        "credentials": {
+          "slackApi": {
+            "id": "3pLMehhCN7Vzi09D",
+            "name": "Slack account"
+          }
+        },
+        "notes": "Post to #standup-test. Needs chat:write. Adjust text field to match Claude node's actual output key."
+      }
+    ],
+    "connections": {
+      "When Executed by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "GitHub Commits",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Redmine Issues",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Slack Read",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Manual Trigger": {
+        "main": [
+          [
+            {
+              "node": "GitHub Commits",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Redmine Issues",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Slack Read",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger 9am": {
+        "main": [
+          [
+            {
+              "node": "GitHub Commits",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Redmine Issues",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Slack Read",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook (MCP entry)": {
+        "main": [
+          [
+            {
+              "node": "GitHub Commits",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Redmine Issues",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Slack Read",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GitHub Commits": {
+        "main": [
+          [
+            {
+              "node": "Merge & Format",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Redmine Issues": {
+        "main": [
+          [
+            {
+              "node": "Merge & Format",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Slack Read": {
+        "main": [
+          [
+            {
+              "node": "Merge & Format",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge & Format": {
+        "main": [
+          [
+            {
+              "node": "Claude Code",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Claude Code": {
+        "main": [
+          [
+            {
+              "node": "Slack Post",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "templateCredsSetupCompleted": true,
+      "instanceId": "1c23d0f539d174b3711295b22b5ae12e228297509b7a059c78e3008438245bd0"
+    }
+  }
