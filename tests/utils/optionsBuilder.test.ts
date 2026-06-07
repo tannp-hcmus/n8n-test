@@ -1,0 +1,917 @@
+import { describe, it, expect } from "vitest";
+import { buildExecutionOptions } from "../../nodes/ClaudeCode/utils/optionsBuilder.js";
+import type { IExecuteFunctions } from "n8n-workflow";
+import {
+	createTestContext,
+	defaultExecutePromptParams,
+	executeWithContextParams,
+	continueSessionParams,
+	resumeSessionParams,
+	customModelParams,
+	toolPermissionsParams,
+	singleAgentParams,
+	fullAgentParams,
+	multipleAgentsParams,
+	emptyAgentsParams,
+	newFlagsParams,
+	partialNewFlagsParams,
+	worktreeWithNameParams,
+	worktreeAutoNameParams,
+	worktreeDisabledParams,
+	singleMcpStdioServerParams,
+	singleMcpHttpServerParams,
+	multipleMcpServersParams,
+	mcpConfigFilePathsParams,
+	mcpStrictModeParams,
+	emptyMcpServersParams,
+	fullMcpConfigParams,
+	mcpCommandWithInlineArgsParams,
+	effortLowParams,
+	effortMediumParams,
+	effortHighParams,
+	systemPromptReplaceParams,
+	systemPromptAppendParams,
+	maxOutputTokensParams,
+} from "../fixtures/executeFunctionsHelper.js";
+
+describe("optionsBuilder", () => {
+	describe("buildExecutionOptions", () => {
+		it("should build minimal options for executePrompt", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.prompt).toBe("Hello, Claude!");
+			expect(result.outputFormat).toBe("json");
+			expect(result.timeout).toBe(300);
+		});
+
+		it("should handle custom model selection", () => {
+			const context = createTestContext(customModelParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.model).toBe("claude-custom-model");
+		});
+
+		it("should handle standard model selection", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				model: "claude-sonnet-4-20250514",
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.model).toBe("claude-sonnet-4-20250514");
+		});
+
+		it("should set model to undefined when empty", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.model).toBeUndefined();
+		});
+
+		it("should parse allowed tools from comma-separated string", () => {
+			const context = createTestContext(
+				toolPermissionsParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.toolPermissions?.allowedTools).toEqual([
+				"Read",
+				"Write",
+				"Bash",
+			]);
+		});
+
+		it("should parse disallowed tools from comma-separated string", () => {
+			const context = createTestContext(
+				toolPermissionsParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.toolPermissions?.disallowedTools).toEqual(["WebFetch"]);
+		});
+
+		it("should filter empty tool strings", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				toolPermissions: {
+					allowedTools: "",
+					disallowedTools: "",
+				},
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.toolPermissions?.allowedTools).toBeUndefined();
+			expect(result.toolPermissions?.disallowedTools).toBeUndefined();
+		});
+
+		it("should trim tool names", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				toolPermissions: {
+					allowedTools: "  Read  ,  Write  ,  ",
+				},
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.toolPermissions?.allowedTools).toEqual(["Read", "Write"]);
+		});
+
+		it("should set continueLastSession for continueSession operation", () => {
+			const context = createTestContext(
+				continueSessionParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "continueSession");
+
+			expect(result.session?.continueLastSession).toBe(true);
+			expect(result.session?.sessionId).toBeUndefined();
+		});
+
+		it("should set sessionId for resumeSession operation", () => {
+			const context = createTestContext(
+				resumeSessionParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "resumeSession");
+
+			expect(result.session?.sessionId).toBe("sess-abc123");
+			expect(result.session?.continueLastSession).toBeUndefined();
+		});
+
+		it("should not set session for executePrompt operation", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.session).toBeUndefined();
+		});
+
+		it("should parse context files for executeWithContext", () => {
+			const context = createTestContext(
+				executeWithContextParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executeWithContext");
+
+			expect(result.contextFiles).toHaveLength(3);
+			expect(result.contextFiles?.[0].path).toBe("/project/src/main.ts");
+			expect(result.contextFiles?.[1].path).toBe("/project/src/utils.ts");
+			expect(result.contextFiles?.[2].path).toBe("/project/tests");
+		});
+
+		it("should not include context files for other operations", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.contextFiles).toBeUndefined();
+		});
+
+		it("should parse working directory from options", () => {
+			const context = createTestContext(
+				executeWithContextParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executeWithContext");
+
+			expect(result.workingDirectory).toBe("/project");
+		});
+
+		it("should parse output format from options", () => {
+			const context = createTestContext(
+				executeWithContextParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executeWithContext");
+
+			expect(result.outputFormat).toBe("json");
+		});
+
+		it("should default output format to json", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.outputFormat).toBe("json");
+		});
+
+		it("should parse maxTurns from options", () => {
+			const context = createTestContext(
+				executeWithContextParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executeWithContext");
+
+			expect(result.maxTurns).toBe(10);
+		});
+
+		it("should parse systemPrompt from options", () => {
+			const context = createTestContext(
+				executeWithContextParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executeWithContext");
+
+			expect(result.systemPrompt).toBe("Be concise");
+		});
+
+		it("should parse additional arguments", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: {
+					additionalArgs: "--verbose --debug",
+				},
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.additionalArgs).toEqual(["--verbose", "--debug"]);
+		});
+
+		it("should filter empty additional arguments", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: {
+					additionalArgs: "",
+				},
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.additionalArgs).toBeUndefined();
+		});
+
+		it("should use custom timeout from options", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: {
+					timeout: 600,
+				},
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.timeout).toBe(600);
+		});
+
+		it("should default timeout to 300 seconds", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.timeout).toBe(300);
+		});
+
+		it("should handle empty context files gracefully", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				contextFiles: { files: [] },
+				additionalDirs: "",
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executeWithContext");
+
+			expect(result.contextFiles).toEqual([]);
+		});
+
+		it("should use different itemIndex", () => {
+			const params = {
+				prompt: "Item specific prompt",
+				model: "",
+				toolPermissions: {},
+				options: {},
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 5, "executePrompt");
+
+			expect(result.prompt).toBe("Item specific prompt");
+		});
+
+		it("should parse a single agent with minimal fields", () => {
+			const context = createTestContext(singleAgentParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.agents).toBeDefined();
+			expect(result.agents?.["code-reviewer"]).toBeDefined();
+			expect(result.agents?.["code-reviewer"].description).toBe(
+				"Expert code reviewer",
+			);
+			expect(result.agents?.["code-reviewer"].prompt).toBe(
+				"You are a senior code reviewer.",
+			);
+			expect(result.agents?.["code-reviewer"].model).toBeUndefined();
+			expect(result.agents?.["code-reviewer"].tools).toBeUndefined();
+			expect(result.agents?.["code-reviewer"].maxTurns).toBeUndefined();
+			expect(result.agents?.["code-reviewer"].memory).toBeUndefined();
+		});
+
+		it("should parse a fully configured agent", () => {
+			const context = createTestContext(fullAgentParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			const agent = result.agents?.debugger;
+			expect(agent).toBeDefined();
+			expect(agent?.model).toBe("sonnet");
+			expect(agent?.tools).toEqual(["Read", "Grep", "Glob", "Bash(git:*)"]);
+			expect(agent?.disallowedTools).toEqual(["Write", "Edit"]);
+			expect(agent?.permissionMode).toBe("plan");
+			expect(agent?.maxTurns).toBe(15);
+			expect(agent?.memory).toBe("project");
+		});
+
+		it("should parse multiple agents", () => {
+			const context = createTestContext(
+				multipleAgentsParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.agents).toBeDefined();
+			expect(Object.keys(result.agents ?? {})).toHaveLength(2);
+			expect(result.agents?.reviewer).toBeDefined();
+			expect(result.agents?.architect).toBeDefined();
+			expect(result.agents?.architect.model).toBe("opus");
+			expect(result.agents?.architect.tools).toEqual(["Read", "Grep"]);
+			expect(result.agents?.architect.permissionMode).toBe("delegate");
+			expect(result.agents?.architect.maxTurns).toBe(10);
+			expect(result.agents?.architect.memory).toBe("user");
+		});
+
+		it("should not include agents when agents list is empty", () => {
+			const context = createTestContext(emptyAgentsParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.agents).toBeUndefined();
+		});
+
+		it("should not include agents when agents param is missing", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.agents).toBeUndefined();
+		});
+
+		it("should parse systemPromptFile from options", () => {
+			const context = createTestContext(newFlagsParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.systemPromptFile).toBe("/path/to/system-prompt.txt");
+		});
+
+		it("should parse verbose from options", () => {
+			const context = createTestContext(newFlagsParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.verbose).toBe(true);
+		});
+
+		it("should parse maxBudgetUsd from options", () => {
+			const context = createTestContext(newFlagsParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.maxBudgetUsd).toBe(10.5);
+		});
+
+		it("should parse jsonSchema from options", () => {
+			const context = createTestContext(newFlagsParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.jsonSchema).toBe(
+				'{"type":"object","properties":{"result":{"type":"string"}}}',
+			);
+		});
+
+		it("should parse fallbackModel from options", () => {
+			const context = createTestContext(newFlagsParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.fallbackModel).toBe("claude-sonnet-4-20250514");
+		});
+
+		it("should leave new flags undefined when not set", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.systemPromptFile).toBeUndefined();
+			expect(result.verbose).toBeUndefined();
+			expect(result.maxBudgetUsd).toBeUndefined();
+			expect(result.jsonSchema).toBeUndefined();
+			expect(result.fallbackModel).toBeUndefined();
+		});
+
+		it("should handle partial new flags", () => {
+			const context = createTestContext(
+				partialNewFlagsParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.maxBudgetUsd).toBe(2.0);
+			expect(result.fallbackModel).toBe("claude-haiku-4-20250414");
+			expect(result.systemPromptFile).toBeUndefined();
+			expect(result.verbose).toBeUndefined();
+			expect(result.jsonSchema).toBeUndefined();
+		});
+
+		it("should omit model inherit from agent config", () => {
+			const context = createTestContext(singleAgentParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.agents?.["code-reviewer"].model).toBeUndefined();
+		});
+
+		it("should trim and filter tools in agent config", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				agents: {
+					agentsList: [
+						{
+							name: "test-agent",
+							description: "Test",
+							prompt: "Test",
+							model: "inherit",
+							tools: "  Read  ,  Grep  ,  ",
+							disallowedTools: "  Write  ",
+							permissionMode: "",
+							maxTurns: 0,
+							memory: "",
+						},
+					],
+				},
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.agents?.["test-agent"].tools).toEqual(["Read", "Grep"]);
+			expect(result.agents?.["test-agent"].disallowedTools).toEqual(["Write"]);
+		});
+
+		it("should parse worktree with custom name", () => {
+			const context = createTestContext(
+				worktreeWithNameParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.worktree).toBe("feature-auth");
+		});
+
+		it("should parse worktree with empty name for auto-generation", () => {
+			const context = createTestContext(
+				worktreeAutoNameParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.worktree).toBe("");
+		});
+
+		it("should not include worktree when disabled", () => {
+			const context = createTestContext(
+				worktreeDisabledParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.worktree).toBeUndefined();
+		});
+
+		it("should not include worktree when not set", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.worktree).toBeUndefined();
+		});
+
+		it("should parse a single stdio MCP server and split command", () => {
+			const context = createTestContext(
+				singleMcpStdioServerParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.mcpConfig).toBeDefined();
+			expect(result.mcpConfig?.inlineServers?.slack).toBeDefined();
+			const server = result.mcpConfig?.inlineServers?.slack as {
+				command: string;
+				args?: string[];
+				env?: Record<string, string>;
+			};
+			expect(server.command).toBe("npx");
+			expect(server.args).toEqual([
+				"-y",
+				"@modelcontextprotocol/server-slack",
+				"--port",
+				"3000",
+			]);
+			expect(server.env).toEqual({ SLACK_TOKEN: "xoxb-test-123" });
+		});
+
+		it("should parse a single HTTP MCP server", () => {
+			const context = createTestContext(
+				singleMcpHttpServerParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.mcpConfig).toBeDefined();
+			const server = result.mcpConfig?.inlineServers?.["remote-api"] as {
+				type: string;
+				url: string;
+				headers?: Record<string, string>;
+			};
+			expect(server.type).toBe("http");
+			expect(server.url).toBe("https://mcp.example.com/sse");
+			expect(server.headers).toEqual({
+				Authorization: "Bearer token-123",
+			});
+		});
+
+		it("should parse multiple MCP servers of mixed types", () => {
+			const context = createTestContext(
+				multipleMcpServersParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.mcpConfig?.inlineServers).toBeDefined();
+			expect(Object.keys(result.mcpConfig?.inlineServers ?? {})).toHaveLength(
+				2,
+			);
+			expect(result.mcpConfig?.inlineServers?.slack).toBeDefined();
+			expect(result.mcpConfig?.inlineServers?.remote).toBeDefined();
+		});
+
+		it("should parse MCP config file paths", () => {
+			const context = createTestContext(
+				mcpConfigFilePathsParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.mcpConfig).toBeDefined();
+			expect(result.mcpConfig?.configFilePaths).toEqual([
+				"/path/to/mcp.json",
+				"/path/to/other.json",
+			]);
+		});
+
+		it("should parse MCP strict mode", () => {
+			const context = createTestContext(
+				mcpStrictModeParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.mcpConfig).toBeDefined();
+			expect(result.mcpConfig?.strictMode).toBe(true);
+		});
+
+		it("should not include mcpConfig when no MCP params defined", () => {
+			const context = createTestContext(
+				emptyMcpServersParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.mcpConfig).toBeUndefined();
+		});
+
+		it("should combine inline servers, file paths, and strict mode", () => {
+			const context = createTestContext(
+				fullMcpConfigParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.mcpConfig).toBeDefined();
+			expect(result.mcpConfig?.inlineServers?.slack).toBeDefined();
+			expect(result.mcpConfig?.configFilePaths).toEqual([
+				"/path/to/extra.json",
+			]);
+			expect(result.mcpConfig?.strictMode).toBe(true);
+		});
+
+		it("should trim and filter MCP config file paths", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				mcpServers: { serversList: [] },
+				mcpConfigFilePaths: "  /path/one.json  ,  , /path/two.json  ",
+				mcpStrictMode: false,
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.mcpConfig?.configFilePaths).toEqual([
+				"/path/one.json",
+				"/path/two.json",
+			]);
+		});
+
+		it("should split full command into executable and args", () => {
+			const context = createTestContext(
+				mcpCommandWithInlineArgsParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			const server = result.mcpConfig?.inlineServers?.context7 as {
+				command: string;
+				args?: string[];
+			};
+			expect(server.command).toBe("npx");
+			expect(server.args).toEqual([
+				"-y",
+				"@upstash/context7-mcp",
+				"--api-key",
+				"sk-123",
+			]);
+		});
+
+		it("should omit optional stdio fields when empty", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				mcpServers: {
+					serversList: [
+						{
+							name: "minimal",
+							serverType: "stdio",
+							command: "my-server",
+							args: "",
+							env: "",
+							url: "",
+							headers: "",
+						},
+					],
+				},
+				mcpConfigFilePaths: "",
+				mcpStrictMode: false,
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			const server = result.mcpConfig?.inlineServers?.minimal as {
+				command: string;
+				args?: string[];
+				env?: Record<string, string>;
+			};
+			expect(server.command).toBe("my-server");
+			expect(server.args).toBeUndefined();
+			expect(server.env).toBeUndefined();
+		});
+
+		it("should omit optional HTTP headers when empty", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				mcpServers: {
+					serversList: [
+						{
+							name: "minimal-http",
+							serverType: "http",
+							command: "",
+							args: "",
+							env: "",
+							url: "https://example.com/mcp",
+							headers: "",
+						},
+					],
+				},
+				mcpConfigFilePaths: "",
+				mcpStrictMode: false,
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			const server = result.mcpConfig?.inlineServers?.["minimal-http"] as {
+				type: string;
+				url: string;
+				headers?: Record<string, string>;
+			};
+			expect(server.type).toBe("http");
+			expect(server.url).toBe("https://example.com/mcp");
+			expect(server.headers).toBeUndefined();
+		});
+
+		it("should parse effort low from options", () => {
+			const context = createTestContext(effortLowParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.effort).toBe("low");
+		});
+
+		it("should parse effort medium from options", () => {
+			const context = createTestContext(
+				effortMediumParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.effort).toBe("medium");
+		});
+
+		it("should leave effort undefined when high (default)", () => {
+			const context = createTestContext(effortHighParams) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.effort).toBeUndefined();
+		});
+
+		it("should leave effort undefined when not set", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.effort).toBeUndefined();
+		});
+
+		it("should parse systemPromptMode replace from options", () => {
+			const context = createTestContext(
+				systemPromptReplaceParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.systemPromptMode).toBe("replace");
+			expect(result.systemPrompt).toBe("You are a custom assistant");
+			expect(result.systemPromptFile).toBe("/path/to/custom-prompt.txt");
+		});
+
+		it("should parse systemPromptMode append from options", () => {
+			const context = createTestContext(
+				systemPromptAppendParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.systemPromptMode).toBe("append");
+			expect(result.systemPrompt).toBe("Be concise");
+		});
+
+		it("should leave systemPromptMode undefined when not set", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.systemPromptMode).toBeUndefined();
+		});
+
+		it("should parse maxOutputTokens from options", () => {
+			const context = createTestContext(
+				maxOutputTokensParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.maxOutputTokens).toBe(4096);
+		});
+
+		it("should leave maxOutputTokens undefined when not set", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.maxOutputTokens).toBeUndefined();
+		});
+
+		it("should parse envVars from options", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: { envVars: '{"FOO":"bar","BAZ":"qux"}' },
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.envVars).toEqual({ FOO: "bar", BAZ: "qux" });
+		});
+
+		it("should leave envVars undefined when not set", () => {
+			const context = createTestContext(
+				defaultExecutePromptParams,
+			) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.envVars).toBeUndefined();
+		});
+
+		it("should leave envVars undefined when empty JSON object", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: { envVars: "{}" },
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.envVars).toBeUndefined();
+		});
+
+		it("should leave envVars undefined when empty string", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: { envVars: "" },
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			const result = buildExecutionOptions(context, 0, "executePrompt");
+
+			expect(result.envVars).toBeUndefined();
+		});
+
+		it("should throw descriptive error for invalid envVars JSON", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: { envVars: "{not valid json}" },
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			expect(() => buildExecutionOptions(context, 0, "executePrompt")).toThrow(
+				/Invalid envVars JSON/,
+			);
+		});
+
+		it("should throw error for invalid env var key name", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: { envVars: '{"foo;bar":"value"}' },
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			expect(() => buildExecutionOptions(context, 0, "executePrompt")).toThrow(
+				/Invalid environment variable name: "foo;bar"/,
+			);
+		});
+
+		it("should throw error for non-string env var value", () => {
+			const params = {
+				...defaultExecutePromptParams,
+				options: { envVars: '{"VALID_KEY":123}' },
+			};
+			const context = createTestContext(params) as IExecuteFunctions;
+
+			expect(() => buildExecutionOptions(context, 0, "executePrompt")).toThrow(
+				/Environment variable "VALID_KEY" must be a string, got number/,
+			);
+		});
+	});
+});

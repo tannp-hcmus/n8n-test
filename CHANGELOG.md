@@ -1,0 +1,123 @@
+# [1.9.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.8.0...v1.9.0) (2026-04-21)
+
+
+### Features
+
+* add per-execution environment variables and fix output parsing ([be66320](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/be66320846a029233deab631cbd65f7ac3264f9d))
+
+
+### Reverts
+
+* undo failed 1.9.0 release commit ([70db5a8](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/70db5a828609a386fe9013fcfe476bf3aaae1e89))
+
+# [1.8.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.7.0...v1.8.0) (2026-03-14)
+
+
+### Features
+
+* add --effort, system prompt replace mode, and max output tokens ([9909255](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/99092553a72b7b0701cdae8a45a6e80c7ebfa60c))
+
+# [1.7.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.6.0...v1.7.0) (2026-03-01)
+
+
+### Features
+
+* add MCP servers passthrough support ([d0b89b6](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/d0b89b6525df68b7d64f26589154cc72ac6ef21a))
+
+# [1.6.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.5.0...v1.6.0) (2026-02-28)
+
+
+### Features
+
+* add worktree isolation, new CLI flags, 1M context window, and custom subagents support ([2b59e77](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/2b59e7768f9e67ea5af43e8d7d263742657fe743))
+
+# [1.5.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.4.0...v1.5.0) (2026-02-27)
+
+
+### Features
+
+* add Kubernetes executor with ephemeral and persistent pod modes ([faba7d2](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/faba7d232c9d47c01ba422a5a2e6e54e6fae6d35))
+
+# [1.4.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.3.0...v1.4.0) (2026-02-26)
+
+
+### Features
+
+* add npm provenance statement for n8n compliance ([b2628ef](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/b2628ef06b64129c6784b36ce51b4d56a4a3be31))
+
+# [1.3.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.2.0...v1.3.0) (2026-02-25)
+
+
+### Features
+
+* add Claude 4.6 models (Opus and Sonnet) ([0c21d9e](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/0c21d9edbb11db8f55300f802b64688840d69a41))
+
+# [1.2.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.1.0...v1.2.0) (2026-01-10)
+
+
+### Features
+
+* add stream-json output format to capture tool interactions ([6179c2b](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/6179c2be77238b322d47fe56e3b07004ddaec75f))
+
+# [1.1.0](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.0.7...v1.1.0) (2026-01-08)
+
+
+### Features
+
+* add permission mode selector to node ([7084e59](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/7084e59350fb02faf45d6def0e62786d702ab679))
+
+## [1.0.7](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.0.6...v1.0.7) (2026-01-03)
+
+
+### Bug Fixes
+
+* remove semantic-release-replace-plugin from release configuration ([7bd2529](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/7bd25297182836ce537dccbabb2bca22c8ecb38b))
+
+## [1.0.6](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.0.5...v1.0.6) (2025-12-31)
+
+
+### Bug Fixes
+
+* enhance SSH key normalization for corrupted formats ([9e0eecb](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/9e0eecb94d11e24a180c4015585970aed7e7488f))
+
+## [1.0.5](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.0.4...v1.0.5) (2025-12-31)
+
+
+### Bug Fixes
+
+* normalize and validate SSH private keys before parsing ([0c7ad92](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/0c7ad92d35fc1db86fce458d7176400f9851a27c))
+
+## [1.0.4](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.0.3...v1.0.4) (2025-12-31)
+
+
+### Bug Fixes
+
+* add pty:false option and exit event for SSH execution ([16361db](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/16361dbd76d6925b50d640b2f7577ecbdecaf884))
+
+## [1.0.3](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.0.2...v1.0.3) (2025-12-31)
+
+
+### Bug Fixes
+
+* close stdin on SSH stream to prevent hanging ([49e753a](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/49e753a6fd50c6a6762eec15223b5e55241d477b))
+
+## [1.0.2](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.0.1...v1.0.2) (2025-12-31)
+
+
+### Bug Fixes
+
+* use lodash template syntax for semantic-release-replace-plugin ([041225f](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/041225f4a5179bc40fb394077257ef5f8a5d1592))
+
+## [1.0.1](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/compare/v1.0.0...v1.0.1) (2025-12-31)
+
+
+### Bug Fixes
+
+* use integer for n8n node version and auto-sync on release ([1c486f6](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/1c486f61332dcdb8241d34f5d068f3afcd793d47))
+
+# 1.0.0 (2025-12-31)
+
+
+### Features
+
+* initial release ([d99b024](https://github.com/ThomasTartrau/n8n-nodes-claude-code-cli/commit/d99b024efdcc35a26b54a49b905c100c51556e2e))

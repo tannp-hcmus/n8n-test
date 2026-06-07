@@ -1,0 +1,1160 @@
+import { describe, it, expect } from "vitest";
+import {
+	buildCommand,
+	escapeShellArg,
+	buildShellCommand,
+} from "../../nodes/ClaudeCode/utils/commandBuilder.js";
+import type {
+	ClaudeCodeExecutionOptions,
+	LocalCredentials,
+	CommandParts,
+} from "../../nodes/ClaudeCode/interfaces/index.js";
+import { sampleCredentials } from "../fixtures/mockOutputs.js";
+
+describe("commandBuilder", () => {
+	describe("escapeShellArg", () => {
+		it("should wrap simple string in single quotes", () => {
+			const result = escapeShellArg("hello");
+			expect(result).toBe("'hello'");
+		});
+
+		it("should handle empty string", () => {
+			const result = escapeShellArg("");
+			expect(result).toBe("''");
+		});
+
+		it("should wrap string with spaces in single quotes", () => {
+			const result = escapeShellArg("hello world");
+			expect(result).toBe("'hello world'");
+		});
+
+		it("should escape single quotes within the string", () => {
+			const result = escapeShellArg("it's");
+			expect(result).toBe("'it'\\''s'");
+		});
+
+		it("should escape multiple single quotes", () => {
+			const result = escapeShellArg("it's a 'test'");
+			expect(result).toBe("'it'\\''s a '\\''test'\\'''");
+		});
+
+		it("should preserve shell special characters safely", () => {
+			const result = escapeShellArg("$HOME;rm -rf /");
+			expect(result).toBe("'$HOME;rm -rf /'");
+		});
+
+		it("should handle backticks to prevent command injection", () => {
+			const result = escapeShellArg("`whoami`");
+			expect(result).toBe("'`whoami`'");
+		});
+
+		it("should handle double quotes", () => {
+			const result = escapeShellArg('"quoted"');
+			expect(result).toBe("'\"quoted\"'");
+		});
+
+		it("should handle newlines", () => {
+			const result = escapeShellArg("line1\nline2");
+			expect(result).toBe("'line1\nline2'");
+		});
+
+		it("should handle pipe and redirect characters", () => {
+			const result = escapeShellArg("cat file | grep pattern > output");
+			expect(result).toBe("'cat file | grep pattern > output'");
+		});
+
+		it("should handle ampersand for background execution", () => {
+			const result = escapeShellArg("command &");
+			expect(result).toBe("'command &'");
+		});
+
+		it("should handle parentheses for subshells", () => {
+			const result = escapeShellArg("$(evil)");
+			expect(result).toBe("'$(evil)'");
+		});
+	});
+
+	describe("buildCommand", () => {
+		const defaultCredentials: LocalCredentials = sampleCredentials.localDefault;
+
+		it("should build minimal command with just prompt", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Hello",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.command).toBe("claude");
+			expect(result.args).toContain("-p");
+			expect(result.args).toContain("Hello");
+		});
+
+		it("should include output format flag", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--output-format");
+			expect(result.args).toContain("json");
+		});
+
+		it("should include model flag when specified", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				model: "claude-sonnet-4-20250514",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--model");
+			expect(result.args).toContain("claude-sonnet-4-20250514");
+		});
+
+		it("should not include model flag when model is empty", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				model: "",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--model");
+		});
+
+		it("should include max-turns flag when specified", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				maxTurns: 5,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--max-turns");
+			expect(result.args).toContain("5");
+		});
+
+		it("should not include max-turns when zero", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				maxTurns: 0,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--max-turns");
+		});
+
+		it("should include --continue flag for continueLastSession", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Continue",
+				outputFormat: "json",
+				session: { continueLastSession: true },
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--continue");
+			expect(result.args).not.toContain("--resume");
+		});
+
+		it("should include --resume flag with session ID", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Resume",
+				outputFormat: "json",
+				session: { sessionId: "sess-abc123" },
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--resume");
+			expect(result.args).toContain("sess-abc123");
+			expect(result.args).not.toContain("--continue");
+		});
+
+		it("should include allowed tools", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				toolPermissions: {
+					allowedTools: ["Read", "Write", "Bash"],
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--allowedTools");
+			expect(result.args).toContain("Read,Write,Bash");
+		});
+
+		it("should include disallowed tools", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				toolPermissions: {
+					disallowedTools: ["WebFetch", "Edit"],
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--disallowedTools");
+			expect(result.args).toContain("WebFetch,Edit");
+		});
+
+		it("should not include empty tool permissions", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				toolPermissions: {
+					allowedTools: [],
+					disallowedTools: [],
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--allowedTools");
+			expect(result.args).not.toContain("--disallowedTools");
+		});
+
+		it("should include system prompt", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				systemPrompt: "Be concise and helpful",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--append-system-prompt");
+			expect(result.args).toContain("Be concise and helpful");
+		});
+
+		it("should extract unique directories from context files", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				contextFiles: [
+					{ path: "/project/src/file1.ts" },
+					{ path: "/project/src/file2.ts" },
+					{ path: "/project/tests/test.ts" },
+				],
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const addDirIndices: number[] = [];
+			result.args.forEach((arg, i) => {
+				if (arg === "--add-dir") {
+					addDirIndices.push(i);
+				}
+			});
+
+			expect(addDirIndices.length).toBe(2);
+			expect(result.args).toContain("/project/src");
+			expect(result.args).toContain("/project/tests");
+		});
+
+		it("should handle context files without directory", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				contextFiles: [{ path: "file.ts" }],
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--add-dir");
+		});
+
+		it("should include additional arguments", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				additionalArgs: ["--verbose", "--debug"],
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--verbose");
+			expect(result.args).toContain("--debug");
+		});
+
+		it("should parse environment variables from credentials", () => {
+			const credentials: LocalCredentials = sampleCredentials.local;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.env).toBeDefined();
+			expect(result.env?.ANTHROPIC_API_KEY).toBe("sk-test-123");
+		});
+
+		it("should not include env when empty JSON object", () => {
+			const credentials: LocalCredentials = sampleCredentials.localDefault;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.env).toBeUndefined();
+		});
+
+		it("should not include env when empty string", () => {
+			const credentials: LocalCredentials = sampleCredentials.localNoEnv;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.env).toBeUndefined();
+		});
+
+		it("should use custom claude path from credentials", () => {
+			const credentials: LocalCredentials = sampleCredentials.local;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.command).toBe("/usr/local/bin/claude");
+		});
+
+		it("should set working directory from options", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				workingDirectory: "/custom/path",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.cwd).toBe("/custom/path");
+		});
+
+		it("should fallback to credentials working directory", () => {
+			const credentials: LocalCredentials = sampleCredentials.local;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.cwd).toBe("/home/user/projects");
+		});
+
+		it("should prefer options working directory over credentials", () => {
+			const credentials: LocalCredentials = sampleCredentials.local;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				workingDirectory: "/override/path",
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.cwd).toBe("/override/path");
+		});
+
+		it("should not include --agents when agents is undefined", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--agents");
+		});
+
+		it("should not include --agents when agents is empty", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				agents: {},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--agents");
+		});
+
+		it("should include --agents with JSON for a simple agent", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				agents: {
+					"code-reviewer": {
+						description: "Reviews code",
+						prompt: "You review code.",
+					},
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const agentsIdx = result.args.indexOf("--agents");
+			expect(agentsIdx).toBeGreaterThan(-1);
+			const agentsJson = JSON.parse(result.args[agentsIdx + 1]);
+			expect(agentsJson["code-reviewer"].description).toBe("Reviews code");
+			expect(agentsJson["code-reviewer"].prompt).toBe("You review code.");
+		});
+
+		it("should include --agents with all fields for a full agent", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				agents: {
+					debugger: {
+						description: "Expert debugger",
+						prompt: "You debug issues.",
+						model: "sonnet",
+						tools: ["Read", "Grep"],
+						disallowedTools: ["Write"],
+						permissionMode: "plan",
+						maxTurns: 15,
+						memory: "project",
+					},
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const agentsIdx = result.args.indexOf("--agents");
+			const agentsJson = JSON.parse(result.args[agentsIdx + 1]);
+			expect(agentsJson.debugger.model).toBe("sonnet");
+			expect(agentsJson.debugger.tools).toEqual(["Read", "Grep"]);
+			expect(agentsJson.debugger.disallowedTools).toEqual(["Write"]);
+			expect(agentsJson.debugger.permissionMode).toBe("plan");
+			expect(agentsJson.debugger.maxTurns).toBe(15);
+			expect(agentsJson.debugger.memory).toBe("project");
+		});
+
+		it("should include --agents with multiple agents", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				agents: {
+					reviewer: {
+						description: "Reviews code",
+						prompt: "You review.",
+					},
+					architect: {
+						description: "Designs systems",
+						prompt: "You design.",
+						model: "opus",
+					},
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const agentsIdx = result.args.indexOf("--agents");
+			const agentsJson = JSON.parse(result.args[agentsIdx + 1]);
+			expect(Object.keys(agentsJson)).toHaveLength(2);
+			expect(agentsJson.reviewer).toBeDefined();
+			expect(agentsJson.architect).toBeDefined();
+			expect(agentsJson.architect.model).toBe("opus");
+		});
+
+		it("should include --append-system-prompt-file when systemPromptFile is set", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				systemPromptFile: "/path/to/prompt.txt",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--append-system-prompt-file");
+			expect(result.args).toContain("/path/to/prompt.txt");
+		});
+
+		it("should not include --append-system-prompt-file when empty", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--append-system-prompt-file");
+		});
+
+		it("should include both system prompt and system prompt file", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				systemPrompt: "Be concise",
+				systemPromptFile: "/path/to/extra-rules.txt",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--append-system-prompt");
+			expect(result.args).toContain("Be concise");
+			expect(result.args).toContain("--append-system-prompt-file");
+			expect(result.args).toContain("/path/to/extra-rules.txt");
+		});
+
+		it("should include --verbose when verbose is true and output is not stream-json", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				verbose: true,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--verbose");
+		});
+
+		it("should not duplicate --verbose when stream-json already adds it", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "stream-json",
+				verbose: true,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const verboseCount = result.args.filter((a) => a === "--verbose").length;
+			expect(verboseCount).toBe(1);
+		});
+
+		it("should not include --verbose when verbose is false", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				verbose: false,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--verbose");
+		});
+
+		it("should include --max-budget-usd when specified", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				maxBudgetUsd: 5.5,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--max-budget-usd");
+			expect(result.args).toContain("5.5");
+		});
+
+		it("should not include --max-budget-usd when zero", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				maxBudgetUsd: 0,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--max-budget-usd");
+		});
+
+		it("should include --json-schema when specified", () => {
+			const schema =
+				'{"type":"object","properties":{"summary":{"type":"string"}}}';
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				jsonSchema: schema,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--json-schema");
+			expect(result.args).toContain(schema);
+		});
+
+		it("should not include --json-schema when empty", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--json-schema");
+		});
+
+		it("should include --fallback-model when specified", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				fallbackModel: "claude-sonnet-4-20250514",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--fallback-model");
+			expect(result.args).toContain("claude-sonnet-4-20250514");
+		});
+
+		it("should not include --fallback-model when empty", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--fallback-model");
+		});
+
+		it("should place --agents before additional args", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				agents: {
+					helper: {
+						description: "Helps",
+						prompt: "You help.",
+					},
+				},
+				additionalArgs: ["--verbose"],
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const agentsIdx = result.args.indexOf("--agents");
+			const verboseIdx = result.args.indexOf("--verbose");
+			expect(agentsIdx).toBeLessThan(verboseIdx);
+		});
+
+		it("should include --worktree with name when specified", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				worktree: "feature-auth",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--worktree");
+			expect(result.args).toContain("feature-auth");
+		});
+
+		it("should include --worktree without name for auto-generation", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				worktree: "",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--worktree");
+			const worktreeIdx = result.args.indexOf("--worktree");
+			const nextArg = result.args[worktreeIdx + 1];
+			expect(nextArg).not.toBe("feature-auth");
+		});
+
+		it("should not include --worktree when undefined", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--worktree");
+		});
+
+		it("should not include --mcp-config when mcpConfig is undefined", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--mcp-config");
+			expect(result.args).not.toContain("--strict-mcp-config");
+		});
+
+		it("should include --mcp-config with inline JSON for stdio servers", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				mcpConfig: {
+					inlineServers: {
+						slack: {
+							command: "npx -y @modelcontextprotocol/server-slack",
+							env: { SLACK_TOKEN: "xoxb-test" },
+						},
+					},
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const mcpIdx = result.args.indexOf("--mcp-config");
+			expect(mcpIdx).toBeGreaterThan(-1);
+			const mcpJson = JSON.parse(result.args[mcpIdx + 1]);
+			expect(mcpJson.mcpServers.slack.command).toBe(
+				"npx -y @modelcontextprotocol/server-slack",
+			);
+			expect(mcpJson.mcpServers.slack.env.SLACK_TOKEN).toBe("xoxb-test");
+		});
+
+		it("should include --mcp-config with inline JSON for HTTP servers", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				mcpConfig: {
+					inlineServers: {
+						remote: {
+							type: "http" as const,
+							url: "https://mcp.example.com/sse",
+							headers: { Authorization: "Bearer tok" },
+						},
+					},
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const mcpIdx = result.args.indexOf("--mcp-config");
+			const mcpJson = JSON.parse(result.args[mcpIdx + 1]);
+			expect(mcpJson.mcpServers.remote.type).toBe("http");
+			expect(mcpJson.mcpServers.remote.url).toBe("https://mcp.example.com/sse");
+			expect(mcpJson.mcpServers.remote.headers.Authorization).toBe(
+				"Bearer tok",
+			);
+		});
+
+		it("should include separate --mcp-config per file path", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				mcpConfig: {
+					configFilePaths: ["/path/to/a.json", "/path/to/b.json"],
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const mcpIndices: number[] = [];
+			result.args.forEach((arg, i) => {
+				if (arg === "--mcp-config") {
+					mcpIndices.push(i);
+				}
+			});
+			expect(mcpIndices).toHaveLength(2);
+			expect(result.args[mcpIndices[0] + 1]).toBe("/path/to/a.json");
+			expect(result.args[mcpIndices[1] + 1]).toBe("/path/to/b.json");
+		});
+
+		it("should include --strict-mcp-config when strict mode enabled", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				mcpConfig: {
+					strictMode: true,
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--strict-mcp-config");
+		});
+
+		it("should combine inline servers and file paths", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				mcpConfig: {
+					inlineServers: {
+						slack: {
+							command: "npx server-slack",
+						},
+					},
+					configFilePaths: ["/path/to/extra.json"],
+					strictMode: true,
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const mcpIndices: number[] = [];
+			result.args.forEach((arg, i) => {
+				if (arg === "--mcp-config") {
+					mcpIndices.push(i);
+				}
+			});
+			expect(mcpIndices).toHaveLength(2);
+			// First is inline JSON
+			const inlineJson = JSON.parse(result.args[mcpIndices[0] + 1]);
+			expect(inlineJson.mcpServers.slack).toBeDefined();
+			// Second is file path
+			expect(result.args[mcpIndices[1] + 1]).toBe("/path/to/extra.json");
+			expect(result.args).toContain("--strict-mcp-config");
+		});
+
+		it("should not include --mcp-config when inlineServers is empty", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				mcpConfig: {
+					inlineServers: {},
+				},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--mcp-config");
+		});
+
+		it("should place --mcp-config before additional args", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				mcpConfig: {
+					inlineServers: {
+						slack: { command: "server-slack" },
+					},
+				},
+				additionalArgs: ["--custom-flag"],
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const mcpIdx = result.args.indexOf("--mcp-config");
+			const customIdx = result.args.indexOf("--custom-flag");
+			expect(mcpIdx).toBeLessThan(customIdx);
+		});
+
+		it("should place --worktree before --add-dir", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				worktree: "my-worktree",
+				contextFiles: [{ path: "/project/src/file.ts" }],
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			const worktreeIdx = result.args.indexOf("--worktree");
+			const addDirIdx = result.args.indexOf("--add-dir");
+			expect(worktreeIdx).toBeLessThan(addDirIdx);
+		});
+
+		it("should include --effort low when effort is low", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				effort: "low",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--effort");
+			expect(result.args).toContain("low");
+		});
+
+		it("should include --effort medium when effort is medium", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				effort: "medium",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--effort");
+			expect(result.args).toContain("medium");
+		});
+
+		it("should not include --effort when effort is high (default)", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				effort: "high",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--effort");
+		});
+
+		it("should not include --effort when not set", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).not.toContain("--effort");
+		});
+
+		it("should use --system-prompt in replace mode", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				systemPrompt: "Custom system prompt",
+				systemPromptMode: "replace",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--system-prompt");
+			expect(result.args).toContain("Custom system prompt");
+			expect(result.args).not.toContain("--append-system-prompt");
+		});
+
+		it("should use --system-prompt-file in replace mode", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				systemPromptFile: "/path/to/prompt.txt",
+				systemPromptMode: "replace",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--system-prompt-file");
+			expect(result.args).toContain("/path/to/prompt.txt");
+			expect(result.args).not.toContain("--append-system-prompt-file");
+		});
+
+		it("should use --append-system-prompt in append mode", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				systemPrompt: "Extra instructions",
+				systemPromptMode: "append",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--append-system-prompt");
+			expect(result.args).toContain("Extra instructions");
+			expect(result.args).not.toContain("--system-prompt");
+		});
+
+		it("should use --append-system-prompt when systemPromptMode is not set", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				systemPrompt: "Extra instructions",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--append-system-prompt");
+			expect(result.args).toContain("Extra instructions");
+		});
+
+		it("should use both --system-prompt and --system-prompt-file in replace mode", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				systemPrompt: "Custom prompt",
+				systemPromptFile: "/path/to/prompt.txt",
+				systemPromptMode: "replace",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.args).toContain("--system-prompt");
+			expect(result.args).toContain("Custom prompt");
+			expect(result.args).toContain("--system-prompt-file");
+			expect(result.args).toContain("/path/to/prompt.txt");
+			expect(result.args).not.toContain("--append-system-prompt");
+			expect(result.args).not.toContain("--append-system-prompt-file");
+		});
+
+		it("should set CLAUDE_CODE_MAX_OUTPUT_TOKENS env var when maxOutputTokens is set", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				maxOutputTokens: 4096,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.env).toBeDefined();
+			expect(result.env?.CLAUDE_CODE_MAX_OUTPUT_TOKENS).toBe("4096");
+		});
+
+		it("should not set CLAUDE_CODE_MAX_OUTPUT_TOKENS when zero", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				maxOutputTokens: 0,
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.env).toBeUndefined();
+		});
+
+		it("should not set CLAUDE_CODE_MAX_OUTPUT_TOKENS when not set", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.env).toBeUndefined();
+		});
+
+		it("should combine CLAUDE_CODE_MAX_OUTPUT_TOKENS with other env vars", () => {
+			const credentials: LocalCredentials = sampleCredentials.local;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				maxOutputTokens: 2048,
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.env).toBeDefined();
+			expect(result.env?.CLAUDE_CODE_MAX_OUTPUT_TOKENS).toBe("2048");
+			expect(result.env?.ANTHROPIC_API_KEY).toBe("sk-test-123");
+		});
+
+		it("should include per-execution envVars in env", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				envVars: { FOO: "bar" },
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.env).toBeDefined();
+			expect(result.env?.FOO).toBe("bar");
+		});
+
+		it("should override credential envVars with per-execution envVars", () => {
+			const credentials: LocalCredentials = sampleCredentials.local;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				envVars: { ANTHROPIC_API_KEY: "override" },
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.env).toBeDefined();
+			expect(result.env?.ANTHROPIC_API_KEY).toBe("override");
+		});
+
+		it("should merge credential envVars with per-execution envVars", () => {
+			const credentials: LocalCredentials = sampleCredentials.local;
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				envVars: { CUSTOM: "value" },
+			};
+
+			const result = buildCommand(options, credentials);
+
+			expect(result.env).toBeDefined();
+			expect(result.env?.ANTHROPIC_API_KEY).toBe("sk-test-123");
+			expect(result.env?.CUSTOM).toBe("value");
+		});
+
+		it("should not include env when envVars is empty object", () => {
+			const options: ClaudeCodeExecutionOptions = {
+				prompt: "Test",
+				outputFormat: "json",
+				envVars: {},
+			};
+
+			const result = buildCommand(options, defaultCredentials);
+
+			expect(result.env).toBeUndefined();
+		});
+	});
+
+	describe("buildShellCommand", () => {
+		it("should build command string with escaped arguments", () => {
+			const parts: CommandParts = {
+				command: "claude",
+				args: ["-p", "Hello world"],
+			};
+
+			const result = buildShellCommand(parts);
+
+			expect(result).toBe("claude '-p' 'Hello world'");
+		});
+
+		it("should prepend cd command when cwd is specified", () => {
+			const parts: CommandParts = {
+				command: "claude",
+				args: ["-p", "Test"],
+				cwd: "/my/project",
+			};
+
+			const result = buildShellCommand(parts);
+
+			expect(result).toBe("cd '/my/project' && claude '-p' 'Test'");
+		});
+
+		it("should escape cwd path", () => {
+			const parts: CommandParts = {
+				command: "claude",
+				args: ["-p", "Test"],
+				cwd: "/path/with 'quotes'",
+			};
+
+			const result = buildShellCommand(parts);
+
+			expect(result).toContain("cd '/path/with '\\''quotes'\\'''");
+		});
+
+		it("should handle empty args", () => {
+			const parts: CommandParts = {
+				command: "claude",
+				args: [],
+			};
+
+			const result = buildShellCommand(parts);
+
+			expect(result).toBe("claude ");
+		});
+
+		it("should properly escape complex prompt", () => {
+			const parts: CommandParts = {
+				command: "claude",
+				args: ["-p", "Write a function that says 'Hello'"],
+			};
+
+			const result = buildShellCommand(parts);
+
+			expect(result).toBe(
+				"claude '-p' 'Write a function that says '\\''Hello'\\'''",
+			);
+		});
+	});
+});

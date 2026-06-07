@@ -1,0 +1,214 @@
+{
+  "name": "Week3 Standup Bot",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-640, 80]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "days", "triggerAtHour": 9, "triggerAtMinute": 0 }
+          ]
+        }
+      },
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": "Schedule Trigger 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-640, 240]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "run-standup",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "33333333-3333-3333-3333-333333333333",
+      "name": "Webhook (MCP entry)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-640, 400],
+      "webhookId": "run-standup-webhook"
+    },
+    {
+      "parameters": {
+        "owner": "REPLACE_OWNER",
+        "repository": "REPLACE_REPO",
+        "resource": "repository",
+        "operation": "getCommits",
+        "returnAll": false,
+        "limit": 50,
+        "additionalParameters": {
+          "since": "={{ $now.minus(24, 'hours').toISO() }}"
+        }
+      },
+      "id": "44444444-4444-4444-4444-444444444444",
+      "name": "GitHub",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [-300, -160],
+      "onError": "continueRegularOutput",
+      "notes": "Set owner/repo. Needs GitHub API credential (PAT, repo read). Empty result in 24h is OK."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://REPLACE_REDMINE_HOST/issues.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "assigned_to_id", "value": "me" },
+            { "name": "status_id", "value": "open" },
+            { "name": "updated_on", "value": "=>={{ $today.toFormat('yyyy-MM-dd') }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Redmine-API-Key", "value": "REPLACE_REDMINE_API_KEY" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-5555-5555-555555555555",
+      "name": "Redmine Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-300, 0],
+      "onError": "continueRegularOutput",
+      "notes": "Set Redmine host. Prefer a Header Auth credential instead of inline API key."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "channelId": {
+          "__rl": true,
+          "value": "REPLACE_SLACK_CHANNEL_ID",
+          "mode": "id"
+        },
+        "returnAll": false,
+        "limit": 50,
+        "filters": {
+          "oldest": "={{ $today.toSeconds() }}"
+        }
+      },
+      "id": "66666666-6666-6666-6666-666666666666",
+      "name": "Slack Read",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [-300, 160],
+      "onError": "continueRegularOutput",
+      "notes": "Needs Slack credential with channels:history. Channel = the channel you read activity from."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 20,
+        "filters": {
+          "receivedAfter": "={{ $today.minus(1, 'day').toISO() }}"
+        },
+        "options": {}
+      },
+      "id": "77777777-7777-7777-7777-777777777777",
+      "name": "Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-300, 320],
+      "onError": "continueRegularOutput",
+      "notes": "Optional bonus. Needs Gmail OAuth2 credential."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pull each source by node name; tolerate missing/empty sources.\nfunction safe(nodeName) {\n  try { return $items(nodeName).map(i => i.json); } catch (e) { return []; }\n}\n\nconst github  = safe('GitHub');\nconst redmineRaw = safe('Redmine Issues');\nconst redmine = (redmineRaw[0] && redmineRaw[0].issues) ? redmineRaw[0].issues : [];\nconst slack   = safe('Slack Read');\nconst gmail   = safe('Gmail');\n\n// Normalize to {source, title, url}\nconst rows = [];\nfor (const c of github)  rows.push({ source: 'GitHub',  title: ((c.commit && c.commit.message) || c.message || '').split('\\n')[0], url: c.html_url || '' });\nfor (const i of redmine) rows.push({ source: 'Redmine', title: `#${i.id} ${i.subject}`, url: '' });\nfor (const m of slack)   rows.push({ source: 'Slack',   title: (m.text || '').slice(0, 140), url: '' });\nfor (const g of gmail)   rows.push({ source: 'Gmail',   title: g.subject || g.snippet || '', url: '' });\n\n// Dedupe by source+title\nconst seen = new Set();\nconst deduped = rows.filter(r => {\n  const k = r.source + '|' + r.title;\n  if (!r.title || seen.has(k)) return false;\n  seen.add(k); return true;\n});\n\n// Build grouped activity string\nconst bySource = {};\nfor (const r of deduped) { (bySource[r.source] = bySource[r.source] || []).push(r); }\nlet activity = '';\nfor (const s of ['GitHub', 'Redmine', 'Slack', 'Gmail']) {\n  if (bySource[s] && bySource[s].length) {\n    activity += `${s}:\\n` + bySource[s].map(r => `- ${r.title}${r.url ? ' (' + r.url + ')' : ''}`).join('\\n') + '\\n\\n';\n  }\n}\nif (!activity) activity = 'No activity found in the last 24h.';\n\nreturn [{ json: { activity: activity.trim(), count: deduped.length } }];"
+      },
+      "id": "88888888-8888-8888-8888-888888888888",
+      "name": "Merge & Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 80]
+    },
+    {
+      "parameters": {
+        "connectionMode": "docker",
+        "operation": "executePrompt",
+        "prompt": "Based on this activity, write a standup with exactly three sections — Yesterday, Today, Blockers. Be concise, use bullet points. Activity:\n{{ $json.activity }}",
+        "model": "sonnet",
+        "options": {
+          "workingDirectory": "/workspace",
+          "systemPromptMode": "replace",
+          "systemPrompt": "You are a standup assistant."
+        }
+      },
+      "id": "99999999-9999-9999-9999-999999999999",
+      "name": "Claude Code",
+      "type": "n8n-nodes-claude-code-cli.claudeCode",
+      "typeVersion": 1,
+      "position": [380, 80],
+      "notes": "Needs Claude Code Docker credential (container claude-code-runner). After first run, switch operation to Resume Session with Session ID standup-tannp for memory across runs."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "REPLACE_STANDUP_TEST_CHANNEL_ID",
+          "mode": "id"
+        },
+        "text": "={{ $json.result || $json.text || $json.output }}",
+        "otherOptions": {}
+      },
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "name": "Slack Post",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [720, 80],
+      "notes": "Post to #standup-test. Needs chat:write. Adjust text field to match Claude node's actual output key."
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[
+        { "node": "GitHub", "type": "main", "index": 0 },
+        { "node": "Redmine Issues", "type": "main", "index": 0 },
+        { "node": "Slack Read", "type": "main", "index": 0 },
+        { "node": "Gmail", "type": "main", "index": 0 }
+      ]]
+    },
+    "Schedule Trigger 9am": {
+      "main": [[
+        { "node": "GitHub", "type": "main", "index": 0 },
+        { "node": "Redmine Issues", "type": "main", "index": 0 },
+        { "node": "Slack Read", "type": "main", "index": 0 },
+        { "node": "Gmail", "type": "main", "index": 0 }
+      ]]
+    },
+    "Webhook (MCP entry)": {
+      "main": [[
+        { "node": "GitHub", "type": "main", "index": 0 },
+        { "node": "Redmine Issues", "type": "main", "index": 0 },
+        { "node": "Slack Read", "type": "main", "index": 0 },
+        { "node": "Gmail", "type": "main", "index": 0 }
+      ]]
+    },
+    "GitHub": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
+    "Redmine Issues": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
+    "Slack Read": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
+    "Gmail": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
+    "Merge & Format": { "main": [[{ "node": "Claude Code", "type": "main", "index": 0 }]] },
+    "Claude Code": { "main": [[{ "node": "Slack Post", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

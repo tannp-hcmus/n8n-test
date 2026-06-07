@@ -1,0 +1,239 @@
+import type {
+	ClaudeCodeExecutionOptions,
+	CommandParts,
+	LocalCredentials,
+	SshCredentials,
+	DockerCredentials,
+} from "../interfaces/index.js";
+
+type AnyCredentials = LocalCredentials | SshCredentials | DockerCredentials;
+
+/**
+ * Builds the Claude Code CLI command parts from execution options
+ */
+export function buildCommand(
+	options: ClaudeCodeExecutionOptions,
+	credentials: AnyCredentials,
+): CommandParts {
+	const args: string[] = [];
+	const env: Record<string, string> = {};
+
+	// Print mode flag (headless/non-interactive)
+	args.push("-p");
+	args.push(options.prompt);
+
+	// Output format
+	if (options.outputFormat) {
+		args.push("--output-format", options.outputFormat);
+		// stream-json requires --verbose for complete event capture
+		if (options.outputFormat === "stream-json") {
+			args.push("--verbose");
+		}
+	}
+
+	// Model selection
+	if (options.model) {
+		args.push("--model", options.model);
+	}
+
+	// Max turns
+	if (options.maxTurns && options.maxTurns > 0) {
+		args.push("--max-turns", String(options.maxTurns));
+	}
+
+	// Permission mode
+	if (options.permissionMode) {
+		args.push("--permission-mode", options.permissionMode);
+	}
+
+	// Session management
+	if (options.session?.continueLastSession) {
+		args.push("--continue");
+	} else if (options.session?.sessionId) {
+		args.push("--resume", options.session.sessionId);
+	}
+
+	// Tool permissions
+	if (
+		options.toolPermissions?.allowedTools &&
+		options.toolPermissions.allowedTools.length > 0
+	) {
+		args.push("--allowedTools", options.toolPermissions.allowedTools.join(","));
+	}
+	if (
+		options.toolPermissions?.disallowedTools &&
+		options.toolPermissions.disallowedTools.length > 0
+	) {
+		args.push(
+			"--disallowedTools",
+			options.toolPermissions.disallowedTools.join(","),
+		);
+	}
+
+	// System prompt (inline text)
+	if (options.systemPrompt) {
+		if (options.systemPromptMode === "replace") {
+			args.push("--system-prompt", options.systemPrompt);
+		} else {
+			args.push("--append-system-prompt", options.systemPrompt);
+		}
+	}
+
+	// System prompt (from file)
+	if (options.systemPromptFile) {
+		if (options.systemPromptMode === "replace") {
+			args.push("--system-prompt-file", options.systemPromptFile);
+		} else {
+			args.push("--append-system-prompt-file", options.systemPromptFile);
+		}
+	}
+
+	// Verbose mode (explicit user toggle, independent of stream-json auto-verbose)
+	if (options.verbose && options.outputFormat !== "stream-json") {
+		args.push("--verbose");
+	}
+
+	// Reasoning effort
+	if (options.effort && options.effort !== "high") {
+		args.push("--effort", options.effort);
+	}
+
+	// Max budget (cost control)
+	if (options.maxBudgetUsd && options.maxBudgetUsd > 0) {
+		args.push("--max-budget-usd", String(options.maxBudgetUsd));
+	}
+
+	// JSON schema (structured output)
+	if (options.jsonSchema) {
+		args.push("--json-schema", options.jsonSchema);
+	}
+
+	// Fallback model
+	if (options.fallbackModel) {
+		args.push("--fallback-model", options.fallbackModel);
+	}
+
+	// Worktree isolation
+	// Worktree isolation — "" means bare --worktree (auto-name), set by optionsBuilder
+	if (options.worktree !== undefined && options.worktree !== null) {
+		if (options.worktree) {
+			args.push("--worktree", options.worktree);
+		} else {
+			args.push("--worktree");
+		}
+	}
+
+	// Context files (via --add-dir for directories containing the files)
+	if (options.contextFiles && options.contextFiles.length > 0) {
+		const uniqueDirs = new Set<string>();
+		options.contextFiles.forEach((file) => {
+			const lastSlash = file.path.lastIndexOf("/");
+			if (lastSlash > 0) {
+				uniqueDirs.add(file.path.substring(0, lastSlash));
+			}
+		});
+		uniqueDirs.forEach((dir) => {
+			args.push("--add-dir", dir);
+		});
+	}
+
+	// Agents (subagents)
+	if (options.agents && Object.keys(options.agents).length > 0) {
+		args.push("--agents", JSON.stringify(options.agents));
+	}
+
+	// MCP servers
+	if (options.mcpConfig) {
+		if (
+			options.mcpConfig.inlineServers &&
+			Object.keys(options.mcpConfig.inlineServers).length > 0
+		) {
+			args.push(
+				"--mcp-config",
+				JSON.stringify({ mcpServers: options.mcpConfig.inlineServers }),
+			);
+		}
+		if (
+			options.mcpConfig.configFilePaths &&
+			options.mcpConfig.configFilePaths.length > 0
+		) {
+			for (const filePath of options.mcpConfig.configFilePaths) {
+				args.push("--mcp-config", filePath);
+			}
+		}
+		if (options.mcpConfig.strictMode) {
+			args.push("--strict-mcp-config");
+		}
+	}
+
+	// Additional arguments
+	if (options.additionalArgs && options.additionalArgs.length > 0) {
+		args.push(...options.additionalArgs);
+	}
+
+	// Extended context (1M tokens)
+	if (options.extendedContext === false) {
+		env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1";
+	}
+
+	// Max output tokens
+	if (options.maxOutputTokens && options.maxOutputTokens > 0) {
+		env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = String(options.maxOutputTokens);
+	}
+
+	// Parse env vars from local credentials
+	if ("envVars" in credentials && credentials.envVars) {
+		const envVarsString = credentials.envVars as string;
+		if (envVarsString && envVarsString !== "{}") {
+			const parsed = JSON.parse(envVarsString) as Record<string, string>;
+			Object.assign(env, parsed);
+		}
+	}
+
+	// Per-execution env vars (override credential-level)
+	if (options.envVars) {
+		Object.assign(env, options.envVars);
+	}
+
+	const claudePath = credentials.claudePath || "claude";
+	const cwd =
+		options.workingDirectory || credentials.defaultWorkingDir || undefined;
+
+	return {
+		command: claudePath,
+		args,
+		env: Object.keys(env).length > 0 ? env : undefined,
+		cwd,
+	};
+}
+
+/**
+ * Escapes single quotes in a string for safe use inside single-quoted shell contexts.
+ * Returns the escaped value WITHOUT surrounding quotes.
+ */
+export function escapeShellValue(value: string): string {
+	return value.replace(/'/g, "'\\''");
+}
+
+/**
+ * Escapes a shell argument for safe use in SSH/Docker exec commands
+ */
+export function escapeShellArg(arg: string): string {
+	return `'${escapeShellValue(arg)}'`;
+}
+
+/**
+ * Builds a complete shell command string from parts
+ */
+export function buildShellCommand(parts: CommandParts): string {
+	const escapedArgs = parts.args.map(escapeShellArg);
+	let cmd = "";
+
+	if (parts.cwd) {
+		cmd += `cd ${escapeShellArg(parts.cwd)} && `;
+	}
+
+	cmd += `${parts.command} ${escapedArgs.join(" ")}`;
+
+	return cmd;
+}

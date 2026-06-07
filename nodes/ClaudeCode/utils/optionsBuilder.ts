@@ -1,0 +1,349 @@
+import type { IExecuteFunctions } from "n8n-workflow";
+import type {
+	AgentDefinition,
+	ClaudeCodeExecutionOptions,
+	ClaudeCodeOperation,
+	ToolPermissions,
+	OutputFormat,
+	PermissionMode,
+	ReasoningEffort,
+	SystemPromptMode,
+	SessionConfig,
+	ContextFile,
+	McpConfig,
+	McpServerDefinition,
+} from "../interfaces/index.js";
+
+/**
+ * Builds execution options from n8n node parameters
+ */
+export function buildExecutionOptions(
+	context: IExecuteFunctions,
+	itemIndex: number,
+	operation: ClaudeCodeOperation,
+): ClaudeCodeExecutionOptions {
+	const prompt = context.getNodeParameter("prompt", itemIndex, "") as string;
+	const options = context.getNodeParameter("options", itemIndex, {}) as Record<
+		string,
+		unknown
+	>;
+
+	// Parse tool permissions
+	const toolPermsRaw = context.getNodeParameter(
+		"toolPermissions",
+		itemIndex,
+		{},
+	) as Record<string, string>;
+	const toolPermissions: ToolPermissions = {
+		allowedTools: toolPermsRaw.allowedTools
+			? toolPermsRaw.allowedTools
+					.split(",")
+					.map((t: string) => t.trim())
+					.filter(Boolean)
+			: undefined,
+		disallowedTools: toolPermsRaw.disallowedTools
+			? toolPermsRaw.disallowedTools
+					.split(",")
+					.map((t: string) => t.trim())
+					.filter(Boolean)
+			: undefined,
+	};
+
+	// Parse additional args
+	const additionalArgsStr = (options.additionalArgs as string) || "";
+	const additionalArgs = additionalArgsStr.split(" ").filter(Boolean);
+
+	// Build session config based on operation
+	let session: SessionConfig | undefined;
+	if (operation === "continueSession") {
+		session = { continueLastSession: true };
+	} else if (operation === "resumeSession") {
+		const sessionId = context.getNodeParameter(
+			"sessionId",
+			itemIndex,
+			"",
+		) as string;
+		session = { sessionId };
+	}
+
+	// Parse context files for executeWithContext operation
+	let contextFiles: ContextFile[] | undefined;
+	if (operation === "executeWithContext") {
+		const filesData = context.getNodeParameter("contextFiles", itemIndex, {
+			files: [],
+		}) as {
+			files: Array<{ path: string }>;
+		};
+		contextFiles = filesData.files?.map((f) => ({ path: f.path })) || [];
+
+		// Also add additional directories
+		const additionalDirs = context.getNodeParameter(
+			"additionalDirs",
+			itemIndex,
+			"",
+		) as string;
+		if (additionalDirs) {
+			const dirs = additionalDirs
+				.split(",")
+				.map((d) => d.trim())
+				.filter(Boolean);
+			dirs.forEach((dir) => {
+				contextFiles?.push({ path: dir });
+			});
+		}
+	}
+
+	// Determine output format
+	let outputFormat: OutputFormat = "json";
+	if (options.outputFormat) {
+		outputFormat = options.outputFormat as OutputFormat;
+	}
+
+	// Handle model selection (now at root level, not in options)
+	let model = context.getNodeParameter("model", itemIndex, "") as string;
+	if (model === "custom") {
+		model = context.getNodeParameter("customModel", itemIndex, "") as string;
+	}
+	if (!model) {
+		model = undefined as unknown as string;
+	}
+
+	// Handle permission mode
+	const permissionModeRaw = context.getNodeParameter(
+		"permissionMode",
+		itemIndex,
+		"default",
+	) as string;
+	const permissionMode: PermissionMode | undefined =
+		permissionModeRaw && permissionModeRaw !== "default"
+			? (permissionModeRaw as PermissionMode)
+			: undefined;
+
+	// Parse agents (subagents)
+	const agentsData = context.getNodeParameter("agents", itemIndex, {
+		agentsList: [],
+	}) as {
+		agentsList: Array<{
+			name: string;
+			description: string;
+			prompt: string;
+			model: string;
+			tools: string;
+			disallowedTools: string;
+			permissionMode: string;
+			maxTurns: number;
+			memory: string;
+		}>;
+	};
+
+	let agents: Record<string, AgentDefinition> | undefined;
+	if (agentsData.agentsList && agentsData.agentsList.length > 0) {
+		agents = {};
+		for (const agent of agentsData.agentsList) {
+			const def: AgentDefinition = {
+				description: agent.description,
+				prompt: agent.prompt,
+			};
+
+			if (agent.tools) {
+				def.tools = agent.tools
+					.split(",")
+					.map((t: string) => t.trim())
+					.filter(Boolean);
+			}
+			if (agent.disallowedTools) {
+				def.disallowedTools = agent.disallowedTools
+					.split(",")
+					.map((t: string) => t.trim())
+					.filter(Boolean);
+			}
+
+			if (agent.model && agent.model !== "inherit") {
+				def.model = agent.model;
+			}
+
+			if (agent.permissionMode) {
+				def.permissionMode = agent.permissionMode;
+			}
+
+			if (agent.maxTurns && agent.maxTurns > 0) {
+				def.maxTurns = agent.maxTurns;
+			}
+
+			if (agent.memory) {
+				def.memory = agent.memory;
+			}
+
+			agents[agent.name] = def;
+		}
+	}
+
+	// Parse MCP servers
+	const mcpServersData = context.getNodeParameter("mcpServers", itemIndex, {
+		serversList: [],
+	}) as {
+		serversList: Array<{
+			name: string;
+			serverType: string;
+			command: string;
+			args: string;
+			env: string;
+			url: string;
+			headers: string;
+		}>;
+	};
+
+	const mcpConfigFilePathsRaw = context.getNodeParameter(
+		"mcpConfigFilePaths",
+		itemIndex,
+		"",
+	) as string;
+
+	const mcpStrictMode = context.getNodeParameter(
+		"mcpStrictMode",
+		itemIndex,
+		false,
+	) as boolean;
+
+	let mcpConfig: McpConfig | undefined;
+
+	const hasInlineServers =
+		mcpServersData.serversList && mcpServersData.serversList.length > 0;
+	const configFilePaths = mcpConfigFilePathsRaw
+		? mcpConfigFilePathsRaw
+				.split(",")
+				.map((p) => p.trim())
+				.filter(Boolean)
+		: [];
+	const hasConfigFiles = configFilePaths.length > 0;
+
+	if (hasInlineServers || hasConfigFiles || mcpStrictMode) {
+		mcpConfig = {};
+
+		if (hasInlineServers) {
+			mcpConfig.inlineServers = {};
+			for (const server of mcpServersData.serversList) {
+				let def: McpServerDefinition;
+
+				if (server.serverType === "http") {
+					def = {
+						type: "http" as const,
+						url: server.url,
+					};
+					if (server.headers) {
+						def.headers = JSON.parse(server.headers) as Record<string, string>;
+					}
+				} else {
+					// Split command on whitespace: first token is the executable,
+					// remaining tokens are prepended to the explicit args list.
+					// This lets users type "npx -y @org/server --key val" in
+					// the Command field and still produce valid MCP config
+					// where command="npx" and args=["-y","@org/server","--key","val"].
+					const commandParts = server.command.split(/\s+/).filter(Boolean);
+					const executable = commandParts[0];
+					const commandArgs = commandParts.slice(1);
+
+					const explicitArgs = server.args
+						? server.args
+								.split(",")
+								.map((a) => a.trim())
+								.filter(Boolean)
+						: [];
+					const allArgs = [...commandArgs, ...explicitArgs];
+
+					def = {
+						command: executable,
+					};
+					if (allArgs.length > 0) {
+						def.args = allArgs;
+					}
+					if (server.env) {
+						def.env = JSON.parse(server.env) as Record<string, string>;
+					}
+				}
+
+				mcpConfig.inlineServers[server.name] = def;
+			}
+		}
+
+		if (hasConfigFiles) {
+			mcpConfig.configFilePaths = configFilePaths;
+		}
+
+		if (mcpStrictMode) {
+			mcpConfig.strictMode = true;
+		}
+	}
+
+	// Parse per-execution environment variables
+	let envVars: Record<string, string> | undefined;
+	const envVarsStr = (options.envVars as string) || "";
+	if (envVarsStr && envVarsStr !== "{}") {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(envVarsStr);
+		} catch (err) {
+			throw new Error(
+				`Invalid envVars JSON: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+		if (
+			typeof parsed !== "object" ||
+			parsed === null ||
+			Array.isArray(parsed)
+		) {
+			throw new Error("envVars must be a JSON object");
+		}
+		const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+		for (const [key, value] of Object.entries(
+			parsed as Record<string, unknown>,
+		)) {
+			if (!ENV_KEY_RE.test(key)) {
+				throw new Error(
+					`Invalid environment variable name: "${key}". Names must match /^[A-Za-z_][A-Za-z0-9_]*$/.`,
+				);
+			}
+			if (typeof value !== "string") {
+				throw new Error(
+					`Environment variable "${key}" must be a string, got ${typeof value}.`,
+				);
+			}
+		}
+		envVars = parsed as Record<string, string>;
+	}
+
+	return {
+		prompt,
+		workingDirectory: options.workingDirectory as string | undefined,
+		outputFormat,
+		model,
+		maxTurns: (options.maxTurns as number) || undefined,
+		permissionMode,
+		toolPermissions,
+		session,
+		contextFiles,
+		additionalArgs: additionalArgs.length > 0 ? additionalArgs : undefined,
+		timeout: (options.timeout as number) || 300,
+		systemPrompt: (options.systemPrompt as string) || undefined,
+		systemPromptFile: (options.systemPromptFile as string) || undefined,
+		systemPromptMode:
+			(options.systemPromptMode as SystemPromptMode) || undefined,
+		verbose: (options.verbose as boolean) || undefined,
+		maxBudgetUsd: (options.maxBudgetUsd as number) || undefined,
+		jsonSchema: (options.jsonSchema as string) || undefined,
+		fallbackModel: (options.fallbackModel as string) || undefined,
+		agents,
+		mcpConfig,
+		extendedContext: options.extendedContext !== false,
+		worktree: options.worktreeEnabled
+			? (options.worktreeName as string) || ""
+			: undefined,
+		effort:
+			(options.effort as ReasoningEffort) &&
+			(options.effort as string) !== "high"
+				? (options.effort as ReasoningEffort)
+				: undefined,
+		maxOutputTokens: (options.maxOutputTokens as number) || undefined,
+		envVars,
+	};
+}

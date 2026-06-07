@@ -1,0 +1,167 @@
+import type {
+	ClaudeCodeJsonOutput,
+	LocalCredentials,
+} from "../../nodes/ClaudeCode/interfaces/index.js";
+
+/**
+ * Valid JSON output samples from Claude Code CLI
+ */
+export const validJsonOutputs: Record<string, string> = {
+	simple: '{"session_id":"abc123","result":"Hello!"}',
+
+	withUsage: JSON.stringify({
+		session_id: "sess-with-usage",
+		result: "Task completed",
+		is_error: false,
+		total_cost_usd: 0.05,
+		num_turns: 3,
+		usage: {
+			input_tokens: 1500,
+			output_tokens: 800,
+		},
+	}),
+
+	error: JSON.stringify({
+		session_id: "sess-error",
+		result: "Error: Something went wrong",
+		is_error: true,
+	}),
+
+	multiLine: `{"session_id":"first","result":"line1"}
+{"session_id":"second","result":"line2"}`,
+
+	withUnicode: '{"session_id":"unicode","result":"Hello 世界"}',
+
+	complete: JSON.stringify({
+		session_id: "sess-complete",
+		result: "All done",
+		is_error: false,
+		total_cost_usd: 0.123,
+		total_duration_ms: 5000,
+		total_duration_api_ms: 4500,
+		num_turns: 5,
+		usage: {
+			input_tokens: 2000,
+			output_tokens: 1000,
+		},
+	}),
+};
+
+/**
+ * Invalid JSON output samples
+ */
+export const invalidJsonOutputs: Record<string, string> = {
+	empty: "",
+	whitespace: "   \n\t   ",
+	malformed: '{"broken": ',
+	notJson: "Error: Command not found",
+	partialJson: '{"session_id":"test"',
+};
+
+/**
+ * JSON output with non-JSON prefix lines (warnings, MCP errors, etc.)
+ */
+export const prefixedJsonOutputs: Record<string, string> = {
+	warningPrefix: [
+		"Warning: MCP servers blocked by enterprise policy: discord, homeassistant",
+		'{"session_id":"after-warning","result":"Task done","is_error":false}',
+	].join("\n"),
+
+	multipleWarnings: [
+		"Warning: MCP server blocked by enterprise policy: homeassistant",
+		"Warning: MCP server blocked by enterprise policy: discord",
+		"Some other log line",
+		'{"session_id":"after-multi-warn","result":"OK","is_error":false,"num_turns":5}',
+	].join("\n"),
+
+	streamEventWithPrefix: [
+		"Warning: MCP servers blocked by enterprise policy: discord, kubectl",
+		'{"type":"system","subtype":"init","session_id":"prefixed-stream"}',
+		'{"type":"assistant","message":{"content":[{"type":"text","text":"Working..."}]}}',
+		'{"type":"result","subtype":"success","session_id":"prefixed-stream","result":"Analysis complete","total_cost_usd":0.03,"num_turns":7,"usage":{"input_tokens":2000,"output_tokens":500}}',
+	].join("\n"),
+
+	streamErrorWithPrefix: [
+		"Warning: something",
+		'{"type":"result","subtype":"error","result":"Agent crashed"}',
+	].join("\n"),
+
+	onlyWarnings: [
+		"Warning: MCP servers blocked",
+		"Error: could not connect",
+		"Some other non-JSON text",
+	].join("\n"),
+};
+
+/**
+ * Sample credentials for testing
+ */
+export const sampleCredentials: Record<string, LocalCredentials> = {
+	local: {
+		claudePath: "/usr/local/bin/claude",
+		defaultWorkingDir: "/home/user/projects",
+		envVars: '{"ANTHROPIC_API_KEY":"sk-test-123"}',
+	},
+	localDefault: {
+		claudePath: "claude",
+		defaultWorkingDir: "",
+		envVars: "{}",
+	},
+	localNoEnv: {
+		claudePath: "claude",
+		defaultWorkingDir: "/tmp",
+		envVars: "",
+	},
+};
+
+/**
+ * Parsed JSON output samples for normalizeOutput tests
+ */
+export const parsedOutputs: Record<string, ClaudeCodeJsonOutput> = {
+	success: {
+		session_id: "sess-success",
+		result: "Task completed successfully",
+		is_error: false,
+		total_cost_usd: 0.05,
+		num_turns: 2,
+		usage: {
+			input_tokens: 500,
+			output_tokens: 200,
+		},
+	},
+	errorFlag: {
+		session_id: "sess-error-flag",
+		result: "An error occurred",
+		is_error: true,
+	},
+	minimal: {
+		session_id: "sess-minimal",
+	},
+	noSession: {
+		session_id: "",
+		result: "No session",
+	},
+};
+
+/**
+ * Valid stream-json (NDJSON) output samples from Claude Code CLI
+ */
+export const validStreamJsonOutputs: Record<string, string> = {
+	simple: [
+		'{"type":"system","subtype":"init","session_id":"stream-1","tools":[]}',
+		'{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}',
+		'{"type":"result","subtype":"success","session_id":"stream-1","result":"Done"}',
+	].join("\n"),
+
+	withToolUse: [
+		'{"type":"system","subtype":"init","session_id":"stream-2","tools":["Bash"]}',
+		'{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"cmd":"ls"}}]}}',
+		'{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"file.txt"}]}}',
+		'{"type":"result","subtype":"success","total_cost_usd":0.01,"usage":{"input_tokens":100,"output_tokens":50}}',
+	].join("\n"),
+
+	errorResult: [
+		'{"type":"system","subtype":"init","session_id":"stream-err"}',
+		'{"type":"result","subtype":"error","result":"Something failed"}',
+	].join("\n"),
+};
