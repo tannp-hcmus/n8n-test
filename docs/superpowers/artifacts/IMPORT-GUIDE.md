@@ -40,13 +40,29 @@ docker exec claude-code-runner sh -c 'cd /workspace && claude --print "say READY
 ## 6. Memory (Task 9)
 After the first successful run, change **Claude Code → Operation** to **Resume Session**, Session ID `standup-tannp`. Add the standalone AI Agent + Window Buffer Memory demo branch for the literal rubric element.
 
-## 7. MCP (Task 10)
-Expose via N8N **MCP Server Trigger** as tool `run_standup_workflow` (or wrap the `run-standup` webhook). Then locally:
+## 7. MCP (Task 10) — two separate workflows
+
+**Part 1 workflow (Standup):** add a **"When Executed by Another Workflow"** (Execute
+Workflow Trigger) node and wire it into the 3 sources (GitHub/Redmine/Slack Read).
+This is the entry point the MCP tool calls. Save.
+
+**Part 2 workflow (MCP Server):** import `mcp-server-workflow.json`. It contains:
+- **MCP Server Trigger** (path `run-standup`) — the MCP endpoint.
+- **Call n8n Workflow Tool** named `run_standup_workflow`, connected to the trigger's
+  `Tools` (ai_tool) input. Open it → field **Workflow** → mode **From list** → pick the
+  Standup workflow (replaces `REPLACE_STANDUP_WORKFLOW_ID`).
+
+Activate the MCP Server workflow, copy its **Production URL** (e.g.
+`http://localhost:5678/mcp/run-standup`), then locally:
 ```bash
-claude mcp add --transport http n8n-standup <MCP_SERVER_URL>
+claude mcp add --transport http n8n-standup <PRODUCTION_URL>
 claude mcp list
 ```
-In Claude Code CLI: type `run my standup for today`.
+In Claude Code CLI: type `run my standup for today` → Claude calls
+`run_standup_workflow` → Standup workflow runs → standup posted to Slack.
+
+Why two files: the MCP Server is an independent "server" (own activate toggle,
+clean canvas for screenshots) and matches the assignment's Part 1 / Part 2 split.
 
 ## Notes on the file
 - `onError: continueRegularOutput` is set on all four sources so an empty/failing source never aborts the run.
