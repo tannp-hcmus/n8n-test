@@ -39,23 +39,32 @@
     },
     {
       "parameters": {
-        "owner": "REPLACE_OWNER",
-        "repository": "REPLACE_REPO",
-        "resource": "repository",
-        "operation": "getCommits",
-        "returnAll": false,
-        "limit": 50,
-        "additionalParameters": {
-          "since": "={{ $now.minus(24, 'hours').toISO() }}"
-        }
+        "method": "GET",
+        "url": "=https://api.github.com/repos/REPLACE_OWNER/REPLACE_REPO/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{ $now.minus(24, 'hours').toISO() }}" },
+            { "name": "per_page", "value": "50" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "User-Agent", "value": "n8n-standup-bot" },
+            { "name": "Authorization", "value": "Bearer REPLACE_GITHUB_TOKEN" }
+          ]
+        },
+        "options": {}
       },
       "id": "44444444-4444-4444-4444-444444444444",
-      "name": "GitHub",
-      "type": "n8n-nodes-base.github",
-      "typeVersion": 1,
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [-300, -160],
       "onError": "continueRegularOutput",
-      "notes": "Set owner/repo. Needs GitHub API credential (PAT, repo read). Empty result in 24h is OK."
+      "notes": "GitHub node has no 'get commits' op in this version, so we use the REST API directly. Set owner/repo. Prefer a GitHub Header Auth / OAuth credential over the inline Bearer token. Empty result in 24h is OK."
     },
     {
       "parameters": {
@@ -88,25 +97,19 @@
     {
       "parameters": {
         "resource": "message",
-        "operation": "getAll",
-        "channelId": {
-          "__rl": true,
-          "value": "REPLACE_SLACK_CHANNEL_ID",
-          "mode": "id"
-        },
+        "operation": "search",
+        "query": "=after:{{ $today.minus(1, 'day').toFormat('yyyy-MM-dd') }} in:REPLACE_SLACK_CHANNEL_NAME",
         "returnAll": false,
         "limit": 50,
-        "filters": {
-          "oldest": "={{ $today.toSeconds() }}"
-        }
+        "options": {}
       },
       "id": "66666666-6666-6666-6666-666666666666",
       "name": "Slack Read",
       "type": "n8n-nodes-base.slack",
-      "typeVersion": 2.2,
+      "typeVersion": 2.5,
       "position": [-300, 160],
       "onError": "continueRegularOutput",
-      "notes": "Needs Slack credential with channels:history. Channel = the channel you read activity from."
+      "notes": "Slack 'message' resource uses 'search' (not getAll) in this version. Query uses Slack search syntax; replace REPLACE_SLACK_CHANNEL_NAME with e.g. #general (no quotes). Needs search:read scope + a USER token (search.messages requires a user token, not a bot token)."
     },
     {
       "parameters": {
@@ -129,7 +132,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Pull each source by node name; tolerate missing/empty sources.\nfunction safe(nodeName) {\n  try { return $items(nodeName).map(i => i.json); } catch (e) { return []; }\n}\n\nconst github  = safe('GitHub');\nconst redmineRaw = safe('Redmine Issues');\nconst redmine = (redmineRaw[0] && redmineRaw[0].issues) ? redmineRaw[0].issues : [];\nconst slack   = safe('Slack Read');\nconst gmail   = safe('Gmail');\n\n// Normalize to {source, title, url}\nconst rows = [];\nfor (const c of github)  rows.push({ source: 'GitHub',  title: ((c.commit && c.commit.message) || c.message || '').split('\\n')[0], url: c.html_url || '' });\nfor (const i of redmine) rows.push({ source: 'Redmine', title: `#${i.id} ${i.subject}`, url: '' });\nfor (const m of slack)   rows.push({ source: 'Slack',   title: (m.text || '').slice(0, 140), url: '' });\nfor (const g of gmail)   rows.push({ source: 'Gmail',   title: g.subject || g.snippet || '', url: '' });\n\n// Dedupe by source+title\nconst seen = new Set();\nconst deduped = rows.filter(r => {\n  const k = r.source + '|' + r.title;\n  if (!r.title || seen.has(k)) return false;\n  seen.add(k); return true;\n});\n\n// Build grouped activity string\nconst bySource = {};\nfor (const r of deduped) { (bySource[r.source] = bySource[r.source] || []).push(r); }\nlet activity = '';\nfor (const s of ['GitHub', 'Redmine', 'Slack', 'Gmail']) {\n  if (bySource[s] && bySource[s].length) {\n    activity += `${s}:\\n` + bySource[s].map(r => `- ${r.title}${r.url ? ' (' + r.url + ')' : ''}`).join('\\n') + '\\n\\n';\n  }\n}\nif (!activity) activity = 'No activity found in the last 24h.';\n\nreturn [{ json: { activity: activity.trim(), count: deduped.length } }];"
+        "jsCode": "// Pull each source by node name; tolerate missing/empty sources.\nfunction safe(nodeName) {\n  try { return $items(nodeName).map(i => i.json); } catch (e) { return []; }\n}\n\nconst github  = safe('GitHub Commits');\nconst redmineRaw = safe('Redmine Issues');\nconst redmine = (redmineRaw[0] && redmineRaw[0].issues) ? redmineRaw[0].issues : [];\nconst slack   = safe('Slack Read');\nconst gmail   = safe('Gmail');\n\n// Normalize to {source, title, url}\nconst rows = [];\nfor (const c of github)  rows.push({ source: 'GitHub',  title: ((c.commit && c.commit.message) || c.message || '').split('\\n')[0], url: c.html_url || '' });\nfor (const i of redmine) rows.push({ source: 'Redmine', title: `#${i.id} ${i.subject}`, url: '' });\nfor (const m of slack)   rows.push({ source: 'Slack',   title: (m.text || '').slice(0, 140), url: '' });\nfor (const g of gmail)   rows.push({ source: 'Gmail',   title: g.subject || g.snippet || '', url: '' });\n\n// Dedupe by source+title\nconst seen = new Set();\nconst deduped = rows.filter(r => {\n  const k = r.source + '|' + r.title;\n  if (!r.title || seen.has(k)) return false;\n  seen.add(k); return true;\n});\n\n// Build grouped activity string\nconst bySource = {};\nfor (const r of deduped) { (bySource[r.source] = bySource[r.source] || []).push(r); }\nlet activity = '';\nfor (const s of ['GitHub', 'Redmine', 'Slack', 'Gmail']) {\n  if (bySource[s] && bySource[s].length) {\n    activity += `${s}:\\n` + bySource[s].map(r => `- ${r.title}${r.url ? ' (' + r.url + ')' : ''}`).join('\\n') + '\\n\\n';\n  }\n}\nif (!activity) activity = 'No activity found in the last 24h.';\n\nreturn [{ json: { activity: activity.trim(), count: deduped.length } }];"
       },
       "id": "88888888-8888-8888-8888-888888888888",
       "name": "Merge & Format",
@@ -172,7 +175,7 @@
       "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
       "name": "Slack Post",
       "type": "n8n-nodes-base.slack",
-      "typeVersion": 2.2,
+      "typeVersion": 2.5,
       "position": [720, 80],
       "notes": "Post to #standup-test. Needs chat:write. Adjust text field to match Claude node's actual output key."
     }
@@ -180,7 +183,7 @@
   "connections": {
     "Manual Trigger": {
       "main": [[
-        { "node": "GitHub", "type": "main", "index": 0 },
+        { "node": "GitHub Commits", "type": "main", "index": 0 },
         { "node": "Redmine Issues", "type": "main", "index": 0 },
         { "node": "Slack Read", "type": "main", "index": 0 },
         { "node": "Gmail", "type": "main", "index": 0 }
@@ -188,7 +191,7 @@
     },
     "Schedule Trigger 9am": {
       "main": [[
-        { "node": "GitHub", "type": "main", "index": 0 },
+        { "node": "GitHub Commits", "type": "main", "index": 0 },
         { "node": "Redmine Issues", "type": "main", "index": 0 },
         { "node": "Slack Read", "type": "main", "index": 0 },
         { "node": "Gmail", "type": "main", "index": 0 }
@@ -196,13 +199,13 @@
     },
     "Webhook (MCP entry)": {
       "main": [[
-        { "node": "GitHub", "type": "main", "index": 0 },
+        { "node": "GitHub Commits", "type": "main", "index": 0 },
         { "node": "Redmine Issues", "type": "main", "index": 0 },
         { "node": "Slack Read", "type": "main", "index": 0 },
         { "node": "Gmail", "type": "main", "index": 0 }
       ]]
     },
-    "GitHub": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
+    "GitHub Commits": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
     "Redmine Issues": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
     "Slack Read": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
     "Gmail": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },

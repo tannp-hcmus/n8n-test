@@ -5,19 +5,26 @@ Import `standup-workflow.json` into n8n, then do the manual steps below (credent
 ## 1. Import
 n8n → **Workflows → Import from File** → pick `standup-workflow.json`.
 
+> **Node versions matter.** This file targets n8n 2.23.x. The GitHub node has no
+> "get commits" operation in this version, so commits are fetched via the HTTP
+> Request node against the GitHub REST API. The Slack `message` resource uses
+> `search` (not `getAll`) for reading.
+
 ## 2. Replace placeholders (search for `REPLACE_` in each node)
 | Node | Field | Value |
 |------|-------|-------|
-| GitHub | owner / repository | your repo, e.g. `tannp-hcmus` / `myrepo` |
+| GitHub Commits | URL `REPLACE_OWNER/REPLACE_REPO` | your repo, e.g. `tannp-hcmus/myrepo` |
+| GitHub Commits | `Authorization: Bearer REPLACE_GITHUB_TOKEN` | your GitHub PAT (better: use a GitHub credential / Header Auth) |
 | Redmine Issues | URL host | your Redmine host |
 | Redmine Issues | `X-Redmine-API-Key` header | your Redmine API key (better: move to a Header Auth credential) |
-| Slack Read | channelId | the channel ID you read activity from |
+| Slack Read | query `in:REPLACE_SLACK_CHANNEL_NAME` | channel name, e.g. `in:#general` |
 | Slack Post | channelId | `#standup-test` channel ID |
 
 ## 3. Attach credentials (each node → Credential → select/create)
-- **GitHub**: GitHub API (PAT, `repo` read).
-- **Slack Read** + **Slack Post**: same Slack credential, scopes `channels:history`, `channels:read`, `chat:write`.
-- **Gmail**: Gmail OAuth2 (optional).
+- **GitHub Commits**: optional — replace inline Bearer token, or attach a Generic Header Auth credential (`Authorization: Bearer <PAT>`).
+- **Slack Read**: Slack credential with a **USER token** + `search:read` scope (Slack's `search.messages` API requires a user token, NOT a bot token).
+- **Slack Post**: Slack credential (bot token is fine here) with `chat:write`.
+- **Gmail**: Gmail OAuth2 (optional bonus).
 - **Claude Code**: Claude Code Docker API — Container `claude-code-runner`, identifier `name`, Working Directory `/workspace`.
 
 ## 4. Prerequisite (Task 0 — do once)
